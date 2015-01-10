@@ -1,0 +1,9 @@
+<component name="libraryTable">
+  <library name="jsocket">
+    <CLASSES>
+      <root url="jar://$PROJECT_DIR$/../../java-tcp-socket/jsocket/out/artifacts/jsocket_jar/jsocket.jar!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES />
+  </library>
+</component>
