@@ -49,6 +49,7 @@ public class Server {
                         processConnection(ms);
                     }
                 };
+                process.start();
             } catch (IOException e) {
                 e.printStackTrace();
             }
@@ -73,22 +74,18 @@ public class Server {
             }
             else
             {
-                try {
-                    DynamicConnection dConn = new DynamicConnection(ms);
-                    qm.addOrCreate(dConn);
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
+                String id = msg.substring((MessageType.QCCOPTER_ID + "ID: ").length());
+                DynamicConnection dConn = new DynamicConnection(ms);
+                dConn.setId(id);
+                qm.addOrCreate(dConn);
             }
         }
         else if (msg.contains(MessageType.QCCLIENT_ID)&&msg.contains("ID:"))
         {
-            try {
-                StaticConnection sConn = new StaticConnection(ms);
-                qm.addOrCreate(sConn);
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
+            String id = msg.substring((MessageType.QCCLIENT_ID + "ID: ").length());
+            StaticConnection sConn = new StaticConnection(ms);
+            sConn.setId(id);
+            qm.addOrCreate(sConn);
         }
     }
 }

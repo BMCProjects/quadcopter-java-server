@@ -31,22 +31,16 @@ public class QuadcopterManager extends Manager {
             for (String key : (ArrayList<String>)keys)
             {
                 CopterSession cs = (CopterSession) mappedSessions.get(key);
-
+                if (cs.isClosed())
+                {
+                    mappedSessions.remove(key, cs);
+                }
             }
 
             delay(500);
         }
     }
 
-    @Override
-    protected void delay(long millis)
-    {
-        try {
-            Thread.sleep(millis);
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        }
-    }
 
     @Override
     public void addOrCreate(Connection conn)
@@ -79,6 +73,8 @@ public class QuadcopterManager extends Manager {
 
                 cs.setConnection(dConn);
 
+                cs.setSessionId(dConn.getId());
+
                 mappedSessions.put(dConn.getId(), cs);
 
                 startSession(cs);
@@ -108,6 +104,8 @@ public class QuadcopterManager extends Manager {
 
                 cs.setConnection(sConn);
 
+                cs.setSessionId(sConn.getId());
+
                 mappedSessions.put(sConn.getId(), cs);
 
                 startSession(cs);
@@ -130,6 +128,13 @@ public class QuadcopterManager extends Manager {
                     if (dConn.isSuspended())
                     {
                         dConn.reconnect(sock);
+
+                        if (dConn.getId().equals("Test"))
+                        {
+                            dConn.addMessageToSend("Success");
+
+                            cs.close();
+                        }
                         return true;
                     }
                 }

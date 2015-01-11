@@ -17,13 +17,18 @@ public class CopterSession extends Session {
     public void run() {
         while (true)
         {
-            while (copter != null && client != null)
+            if (sessionId.equals("Test"))
             {
-                while (copter != null && copter.isSuspended())
+                runTest();
+                break;
+            }
+            while (dConn != null && sConn != null)
+            {
+                while (dConn.isSuspended())
                 {
-                    if (copter.missedCheckIn())
+                    if (dConn.missedCheckIn())
                     {
-                        switch (copter.getFailCount())
+                        switch (dConn.getFailCount())
                         {
                             case 1:
                                 delay(15000);
@@ -42,17 +47,23 @@ public class CopterSession extends Session {
                     delay(500);
                 }
 
-                String msg = copter.pullMessageToRead();
+                String msg = dConn.pullMessageToRead();
 
                 if (!msg.contains(MessageType.FAIL))
                     processCopterCommand(getCopterCommandType(msg));
 
-                msg = client.pullMessageToRead();
+                msg = sConn.pullMessageToRead();
 
                 if (!msg.contains(MessageType.FAIL))
                     processClientCommand(getClientCommandType(msg));
             }
         }
+    }
+
+    @Override
+    public void setSessionId(String Id)
+    {
+        sessionId = Id;
     }
 
     @Override
@@ -80,6 +91,18 @@ public class CopterSession extends Session {
         {
             this.sConn = sConn;
         }
+
+        if (dConn != null)
+        {
+            String msg = MessageType.QCSERVER_ID + "Session is ready to begin";
+            sConn.addMessageToSend(msg);
+            dConn.addMessageToSend(msg);
+        }
+        else
+        {
+            String msg = MessageType.QCSERVER_ID + "Waiting for Quadcopter to join session...";
+            sConn.addMessageToSend(msg);
+        }
     }
 
     private StaticConnection getStaticConnection()
@@ -90,6 +113,18 @@ public class CopterSession extends Session {
     private void setDynamicConnection(DynamicConnection dConn)
     {
         this.dConn = dConn;
+
+        if (sConn != null)
+        {
+            String msg = MessageType.QCSERVER_ID + "Session is ready to begin";
+            sConn.addMessageToSend(msg);
+            dConn.addMessageToSend(msg);
+        }
+        else
+        {
+            String msg = MessageType.QCSERVER_ID + "Waiting for remote to join session...";
+            dConn.addMessageToSend(msg);
+        }
     }
 
     private DynamicConnection getDynamicConnection()
@@ -102,10 +137,14 @@ public class CopterSession extends Session {
         String msg;
         if (command == CommandType.SUSPENDCONNECTION)
         {
-            copter.suspendConnection();
+            if (copterMsg.contains("Duration: "))
+            {
+
+            }
+            dConn.suspendConnection();
             msg = MessageType.QCSERVER_ID;
             msg += "Quadcopter has gone offline.";
-            client.addMessageToSend(msg);
+            sConn.addMessageToSend(msg);
         }
         else if (command == CommandType.TERMINATE)
         {
@@ -115,7 +154,7 @@ public class CopterSession extends Session {
         {
             msg = MessageType.QCSERVER_ID;
             msg += "Quadcopter is ready for a command," + copterMsg;
-            client.addMessageToSend(msg);
+            sConn.addMessageToSend(msg);
         }
     }
 
@@ -126,25 +165,25 @@ public class CopterSession extends Session {
         {
             msg = MessageType.QCSERVER_ID;
             msg += "Start take off sequence.";
-            copter.addMessageToSend(msg);
+            dConn.addMessageToSend(msg);
         }
         else if (command == CommandType.STOPQCCOPTER)
         {
             msg = MessageType.QCSERVER_ID;
             msg += "Start landing sequence.";
-            copter.addMessageToSend(msg);
+            dConn.addMessageToSend(msg);
         }
         else if (command == CommandType.GOTOCOORDINATE)
         {
             msg = MessageType.QCSERVER_ID;
             msg += "Start navigation sequence," + clientMsg;
-            copter.addMessageToSend(msg);
+            dConn.addMessageToSend(msg);
         }
         else if (command == CommandType.GO_OFFLINE)
         {
             msg = MessageType.QCSERVER_ID;
             msg += "Start autonomous sequence," + clientMsg;
-            copter.addMessageToSend(msg);
+            dConn.addMessageToSend(msg);
         }
     }
 
@@ -198,36 +237,42 @@ public class CopterSession extends Session {
         return CommandType.NO_OP;
     }
 
-    private void delay(long millis)
+    private void runTest()
     {
-        try {
-            Thread.sleep(millis);
-        } catch (InterruptedException e) {
-            e.printStackTrace();
+        String msg;
+
+        do{
+            msg = dConn.pullMessageToRead();
+        } while (msg == null || msg.equals(MessageType.FAIL));
+
+        if (msg.equals(MessageType.SUSPENDCONNECTION))
+        {
+            dConn.suspendConnection();
         }
     }
 
     @Override
-    protected void close()
+    public void close()
     {
-        copter.close();
-        String msg = MessageType.QCSERVER_ID;
-        msg += "Copter has failed to reconnect. Terminating session.";
-        client.addMessageToSend(msg);
+        if (dConn != null)
+            dConn.close();
+        if (sConn != null) {
+            String msg = MessageType.QCSERVER_ID;
+            msg += "Copter has failed to reconnect. Terminating session.";
+            sConn.addMessageToSend(msg);
 
-        while (!client.pullMessageToRead().equals(MessageType.ACK_TERMINATE))
-        {
-            delay(500);
+            while (!sConn.pullMessageToRead().equals(MessageType.ACK_TERMINATE)) {
+                delay(500);
+            }
+
+            sConn.close();
         }
-
-        client.close();
-
-        copter = null;
-        client = null;
+        dConn = null;
+        sConn = null;
     }
 
     @Override
     public boolean isClosed() {
-        return false;
+        return dConn == null && sConn == null;
     }
 }

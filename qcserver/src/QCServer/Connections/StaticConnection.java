@@ -3,8 +3,6 @@ package QCServer.Connections;
 import QCServer.Protocol.MessageType;
 import net.jsock.MessageSocket;
 
-import java.io.IOException;
-
 /**
  * Created by czifro on 12/19/14.
  *
@@ -14,7 +12,7 @@ import java.io.IOException;
  */
 public class StaticConnection extends Connection {
 
-    public StaticConnection(MessageSocket sock) throws IOException {
+    public StaticConnection(MessageSocket sock) {
         super(sock);
 
         Thread read = new Thread()
@@ -55,6 +53,8 @@ public class StaticConnection extends Connection {
 
             if (!message.contains(MessageType.QCCLIENT_ID))
                 continue;
+
+            message = message.substring(MessageType.QCCLIENT_ID.length());
 
             addMessageToRead(message);
         }
@@ -117,6 +117,12 @@ public class StaticConnection extends Connection {
         }
         return null;
     }
+
+    @Override
+    protected void addMessageToResend(String msg) {}
+
+    @Override
+    protected String pullMessageToResend() { return null; }
 
     /**
      * Adds a message to a queue of messages to read

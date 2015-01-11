@@ -3,8 +3,6 @@ package QCServer.Connections;
 import QCServer.Protocol.MessageType;
 import net.jsock.MessageSocket;
 
-import java.io.IOException;
-
 /**
  * Created by czifro on 12/19/14.
  *
@@ -23,7 +21,7 @@ public class DynamicConnection extends Connection {
     // Connection is suspended if true, otherwise connection is active
     private boolean suspended = false;
 
-    public DynamicConnection(MessageSocket sock) throws IOException {
+    public DynamicConnection(MessageSocket sock) {
         super(sock);
 
         Thread read = new Thread() {
@@ -48,27 +46,35 @@ public class DynamicConnection extends Connection {
     @Override
     protected void read() {
         while (true) {
-            if (isSuspended())
-            {
-                try {
-                    Thread.sleep(500);
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
-                continue;
-            }
             if (connectionClosed())
                 break;
+            if (isSuspended()) {
+                delay(500);
+                continue;
+            }
+
+            String message = MessageType.FAIL;
+
+            if (sock == null || sock.isClosed()) {
+                if (isSuspended()) {
+                    delay(500);
+                    continue;
+                }
+                break;
+            }
             String s_size = sock.recv_msg();
             if (!s_size.contains(MessageType.QCCOPTER_MSGSIZE))
                 continue;
-            int size = Integer.parseInt(s_size.substring(s_size.indexOf(MessageType.QCCOPTER_MSGSIZE)));
-            String message = sock.recv_all_msg(size);
+            sock.send_msg(MessageType.QCSERVER_ID + "OK");
+            int size = Integer.parseInt(s_size.substring(MessageType.QCCOPTER_MSGSIZE.length()));
+            message = sock.recv_all_msg(size);
 
-            if (!message.contains(MessageType.QCCOPTER_ID))
-                continue;
-
-            addMessageToRead(message);
+            if (!message.equals(MessageType.FAIL)) {
+                if (!message.contains(MessageType.QCCOPTER_ID))
+                    continue;
+                message = message.substring(MessageType.QCCOPTER_ID.length());
+                addMessageToRead(message);
+            }
         }
     }
 
@@ -78,25 +84,29 @@ public class DynamicConnection extends Connection {
     @Override
     protected void write() {
         while (true) {
-            if (isSuspended())
-            {
-                try {
-                    Thread.sleep(500);
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
-                continue;
-            }
             if (connectionClosed())
                 break;
-            String message = pullMessageToSend();
-
-            if (message == null)
+            if (isSuspended()) {
+                delay(500);
                 continue;
+            }
+            String message = pullMessageToResend();
 
-            if (message.equals("<FAIL>"))
-                continue;
+            if (message == null || message.equals(MessageType.FAIL)) {
+                message = pullMessageToSend();
 
+                if (message == null || message.equals(MessageType.FAIL))
+                    continue;
+            }
+
+            if (sock == null || sock.isClosed()) {
+                if (isSuspended()) {
+                    addMessageToResend(message);
+                    delay(500);
+                    continue;
+                }
+                break;
+            }
             sock.send_msg(message);
         }
     }
@@ -107,8 +117,10 @@ public class DynamicConnection extends Connection {
      * @throws java.io.IOException
      */
     public void reconnect(MessageSocket sock) {
-        this.sock = sock;
-        suspended = false;
+        synchronized (locker) {
+            this.sock = sock;
+            suspended = false;
+        }
     }
 
     /**
@@ -133,7 +145,7 @@ public class DynamicConnection extends Connection {
             try {
                 messagesToSend.put((Object) msg);
             } catch (InterruptedException e) {
-                System.out.println("Failed to add message to send queue for static connection");
+                System.out.println("Failed to add message to send queue for dynamic connection");
             }
         }
     }
@@ -146,9 +158,37 @@ public class DynamicConnection extends Connection {
     @Override
     protected String pullMessageToSend() {
         synchronized (locker) {
-            if (!messagesToRead.isEmpty()) {
+            if (!messagesToSend.isEmpty()) {
                 try {
                     return (String) messagesToSend.take();
+                } catch (InterruptedException e) {
+                    return "<FAIL>";
+                }
+            }
+        }
+        return null;
+    }
+
+    @Override
+    protected void addMessageToResend(String msg)
+    {
+        synchronized (locker) {
+            try {
+                messagesToResend.put((Object) msg);
+            } catch(InterruptedException e)
+            {
+                System.out.println("Failed to add messages to resend queue for dynamic connection");
+            }
+        }
+    }
+
+    @Override
+    protected String pullMessageToResend()
+    {
+        synchronized (locker) {
+            if (!messagesToResend.isEmpty()) {
+                try {
+                    return (String) messagesToResend.take();
                 } catch (InterruptedException e) {
                     return "<FAIL>";
                 }
@@ -169,7 +209,7 @@ public class DynamicConnection extends Connection {
                 messagesToRead.put((Object) msg);
                 lastCheckin = System.currentTimeMillis();
             } catch (InterruptedException e) {
-                System.out.println("Failed to add message to read queue for static connection");
+                System.out.println("Failed to add message to read queue for dynamic connection");
             }
         }
     }
@@ -255,10 +295,11 @@ public class DynamicConnection extends Connection {
      */
     public void close()
     {
-        sock.close();
+        while (!messagesToSend.isEmpty()) { delay(10); }
         synchronized (locker)
         {
             closedConnection = true;
+            sock.close();
         }
     }
 }
